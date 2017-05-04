@@ -1,0 +1,172 @@
+- debug:
+    msg: "Install environment {{ ansible_distribution }} {{ ansible_distribution_version }}"
+
+#
+# Automation Setup
+#
+# Parameters are:
+#   - automation_replicated_setting
+#   - automation_replicated_conf
+#   - automation_extra_files
+#
+
+- name: Check if settings file should be copied
+  local_action: stat path='{{automation_replicated_setting}}'
+  register: settings
+  when: automation_replicated_setting is defined
+
+- name: Copy settings file
+  copy:
+    dest: "/etc/settings.conf"
+    src: '{{automation_replicated_setting}}'
+    owner: root
+    group: root
+    mode: "ugo=r"
+  when:
+  - automation_replicated_setting is defined
+  - settings.stat.exists
+  no_log: false
+  become: yes
+  become_method: sudo
+
+- name: Check if replicated conf file should be copied
+  local_action: stat path='{{automation_replicated_conf}}'
+  register: conf_file
+  when: automation_replicated_conf is defined
+
+- name: Copy Replicated config file
+  copy:
+    dest: "/etc/replicated.conf"
+    src: '{{automation_replicated_conf}}'
+    owner: root
+    group: root
+    mode: "ugo=r"
+  when:
+  - automation_replicated_conf is defined
+  - conf_file.stat.exists
+  no_log: false
+  become: yes
+  become_method: sudo
+
+- name: Copy extra files
+  copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+  with_items: "{{ automation_extra_files }}"
+  when: automation_extra_files is defined
+
+#
+# Install Replicated
+#
+# Parameters are:
+#   - private_address
+#   - public_address
+#   - proxy
+#   - docker_version
+#   - install replicated|operator; replicated is the default
+#   - install_url overwrite the default install url
+#
+
+- name: Set install parameters
+  set_fact:
+    opt_private_address: '{{ private_address | default(ansible_default_ipv4.address) }}'
+    opt_public_address: '{{ public_address | default(ansible_default_ipv4.address) }}'
+    opt_proxy: '{{ proxy | default("no-proxy") }}'
+    opt_install: '{{ install | default("replicated") }}'
+
+- name: Set docker version
+  set_fact:
+    opt_docker_version: 'docker-version={{ docker_version }}'
+  when: docker_version is defined
+
+- name: Default docker version if not passed
+  set_fact:
+    opt_docker_version: ''
+  when: opt_docker_version is not defined
+
+- name: Set daemon token
+  set_fact:
+    opt_daemon_token: 'daemon-token={{ daemon_token }}'
+  when: daemon_token is defined
+
+- name: Default daemon token if not passed
+  set_fact:
+    opt_daemon_token: ''
+  when: daemon_token is not defined
+
+- name: Set daemon endpoint
+  set_fact:
+    opt_daemon_endpoint: 'daemon-endpoint={{ daemon_endpoint }}'
+  when: daemon_endpoint is defined
+
+- name: Default daemon endpoint
+  set_fact:
+    opt_daemon_endpoint: ''
+  when: daemon_endpoint is not defined
+
+- name: Set Replicated install url
+  set_fact:
+    opt_install_url: '{{ install_url | default("https://get.replicated.com/docker") }}'
+  when: opt_install == "replicated"
+
+- name: Set Replicated Operator install url
+  set_fact:
+    opt_install_url: '{{ install_url | default("https://get.replicated.com/operator") }}'
+  when: opt_install == "operator"
+
+- name: Print install settings
+  debug:
+    msg: |
+      Private address: {{ opt_private_address }}
+      Public address: {{ opt_public_address }}
+      Proxy: {{ opt_proxy }}
+      Docker version: {{ opt_docker_version }}
+      Daemon token: {{ opt_daemon_token }}
+      Daemon endpoint: {{ opt_daemon_endpoint }}
+
+- name: Debug Variables
+  debug:
+    msg: 'Using install script {{ opt_install_url }}'
+
+- name: Download replicated installation script
+  get_url:
+    force: yes
+    url: '{{ opt_install_url }}'
+    dest: /tmp/install-script.sh
+
+- file:
+    path: /tmp/install-script.sh
+    mode: 0755
+
+- name: Disable lxc-net to allow ubuntu15 install-script to find eth0
+  service: name=lxc-net state=stopped
+  become: yes
+  become_method: sudo
+  when:
+    - ansible_distribution == "Ubuntu"
+    - ansible_distribution_version == "15.04"
+
+- name: Install Replicated
+  become: yes
+  become_method: sudo
+  shell: |
+    cat /tmp/install-script.sh | sudo bash -s bypass-storagedriver-warnings {{ opt_docker_version }} {{ opt_proxy }} \
+      private-address={{ opt_private_address }} \
+      public-address={{ opt_public_address }} \
+      {{ opt_daemon_token }}
+  args:
+    executable: /bin/bash
+  when: opt_install == "replicated"
+
+- name: Install Replicated Operator
+  become: yes
+  become_method: sudo
+  shell: |
+    cat /tmp/install-script.sh | sudo bash -s bypass-storagedriver-warnings {{ opt_docker_version }} {{ opt_proxy }} \
+      private-address={{ opt_private_address }} \
+      public-address={{ opt_public_address }} \
+      {{ opt_daemon_token }} \
+      {{ opt_daemon_endpoint }}
+  args:
+    executable: /bin/bash
+  when: opt_install == "operator"

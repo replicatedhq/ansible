@@ -1,0 +1,44 @@
+---
+galaxy_info:
+  author: "Replicated"
+  description: An Ansible role for installing Replicated
+  company: Replicated
+  min_ansible_version: 1.4
+  platforms:
+   - name: Debian
+     versions:
+      - 7.7+
+   - name: Fedora
+     versions:
+      - 21
+      - 22
+   - name: Ubuntu
+     versions:
+      - xenial
+      - trusty
+      - wily
+   - name: RHEL
+     versions:
+      - 6.5+
+   - name: CentOS
+     versions:
+      - 6+
+   - name: Amazon AMI
+     versions:
+      - 2014.03
+      - 2014.09
+      - 2015.03
+      - 2015.09
+      - 2016.03
+      - 2016.09
+  categories:
+   - onprem
+   - systems
+   - container
+   - containers
+  galaxy_tags:
+   - docker
+   - onprem
+   - container
+   - containers
+dependencies: []
