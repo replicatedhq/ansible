@@ -1,0 +1,36 @@
+[Unit]
+Description=Replicated Service
+After=docker.service
+Requires=docker.service
+
+[Service]
+PermissionsStartOnly=true
+TimeoutStartSec=0
+KillMode=none
+EnvironmentFile={{ confdir }}/replicated
+User={{ replicated_user_id }}
+Group={{ docker_group_id }}
+ExecStartPre=-/usr/bin/docker rm -f replicated
+ExecStartPre=/bin/mkdir -p /var/run/replicated /var/lib/replicated /premkit/data /var/lib/replicated/statsd
+ExecStartPre=/bin/chown -R {{ replicated_user_id }}:{{ docker_group_id }} /var/run/replicated /var/lib/replicated /premkit/data
+ExecStartPre=-/bin/chmod -R 755 /var/lib/replicated/tmp
+ExecStart=/usr/bin/docker run --name=replicated \
+    -p 9874-9879:9874-9879/tcp \
+    -u {{ replicated_user_id }}:{{ docker_group_id }} \
+    -v /var/lib/replicated:/var/lib/replicated \
+    -v /var/run/docker.sock:/host/var/run/docker.sock \
+    -v /proc:/host/proc:ro \
+    -v /etc:/host/etc:ro \
+    -v /etc/os-release:/host/etc/os-release:ro \
+    {{ replicated_trusted_cert_mount }} \
+    -v /var/run/replicated:/var/run/replicated \
+    -e LOCAL_ADDRESS=${PRIVATE_ADDRESS} \
+    -e RELEASE_CHANNEL=${RELEASE_CHANNEL} \
+    $REPLICATED_OPTS \
+    quay.io/replicated/replicated:current
+ExecStop=/usr/bin/docker stop replicated
+Restart=on-failure
+RestartSec=7
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,74 @@
+---
+###
+### Installs Docker using the get.docker.com script
+###
+
+- include: pip.yml
+
+- name: Download docker install script
+  command: >
+    curl -o /tmp/docker_install.sh https://get.docker.com
+
+- file:
+    path: /tmp/docker_install.sh
+    mode: 0755
+
+- name: Set CE apt repo version
+  set_fact: apt_repo_version='{{ replicated_docker_version | regex_replace("-ce", "~ce") }}'
+
+- name: Set EE apt repo version
+  set_fact: apt_repo_version='{{ replicated_docker_version | regex_replace("-ee", "~ee") }}'
+
+- name: Set CE yum repo version
+  set_fact: yum_repo_version='{{ replicated_docker_version | regex_replace("-ce", ".ce") }}'
+
+- name: Set EE yum repo version
+  set_fact: yum_repo_version='{{ replicated_docker_version | regex_replace("-ee", ".ee") }}'
+
+- name: Determine version
+  command: /tmp/semver_check {{ replicated_docker_version }} 1.12.3
+  register: above_1_12_3
+
+- name: Set apt_repo_suffix
+  set_fact: apt_repo_suffix="-0~{{ ansible_distribution }}-"
+  when: above_1_12_3.stdout == "1"
+
+- name: Set apt_repo_suffix
+  set_fact: apt_repo_suffix="-0~"
+  when: above_1_12_3.stdout != "1"
+
+- name: Debug
+  debug:
+    msg: Install request for docker {{ replicated_docker_version }}; yum_repo_version={{ yum_repo_version }} apt_repo_version={{ apt_repo_version }}
+
+- name: Request specific version for apt-get
+  lineinfile:
+    dest: /tmp/docker_install.sh
+    regexp: "apt-get install"
+    line: "$sh_c 'sleep 3; apt-get update; apt-get install -y -q docker-engine='{{ replicated_docker_version }}{{ apt_repo_suffix }}${dist_version}''"
+    state: present
+
+- name: Request specific version for yum
+  lineinfile:
+    dest: /tmp/docker_install.sh
+    regexp: "yum -y -q install docker-engine"
+    line: "yum -y -q install docker-engine-{{ yum_repo_version }}"
+    state: present
+
+- name: Request specific version for dnf
+  lineinfile:
+    dest: /tmp/docker_install.sh
+    regexp: "dnf -y -q install docker-engine"
+    line: "dnf -y -q install docker-engine-{{ yum_repo_version }}"
+    state: present
+
+- name: Install Docker
+  command: /tmp/docker_install.sh
+  become: yes
+
+- name: Start Docker
+  service:
+    name: docker
+    state: started
+    enabled: yes
+  become: yes

@@ -1,0 +1,15 @@
+---
+replicated_log_level: info
+replicated_script_url: 'https://get.replicated.com/docker'
+replicated_version: 2.7.0
+replicated_docker_version: 1.13.1
+replicated_release_channel: stable
+replicated_username: replicated
+replicated_ui_bind_port: 8800
+replicated_install_docker: true
+replicated_airgap: false
+replicated_private_address: "{{ ansible_default_ipv4.address }}"
+pip_download_dest: /tmp
+pip_version:
+python: python
+pip: pip

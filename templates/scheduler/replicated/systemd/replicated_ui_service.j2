@@ -1,0 +1,27 @@
+[Unit]
+Description=Replicated Service
+After=docker.service
+Requires=docker.service
+
+[Service]
+PermissionsStartOnly=true
+TimeoutStartSec=0
+KillMode=none
+EnvironmentFile={{ confdir }}/replicated
+User={{ replicated_user_id }}
+Group={{ docker_group_id }}
+ExecStartPre=-/usr/bin/docker rm -f replicated-ui
+ExecStartPre=/bin/mkdir -p /var/run/replicated
+ExecStartPre=/bin/chown -R {{ replicated_user_id }}:{{ docker_group_id }} /var/run/replicated
+ExecStart=/usr/bin/docker run --name=replicated-ui \
+    -p {{ replicated_ui_bind_port }}:8800/tcp \
+    -u {{ replicated_user_id }}:{{ docker_group_id }} \
+    -v /var/run/replicated:/var/run/replicated \
+    $REPLICATED_UI_OPTS \
+    quay.io/replicated/replicated-ui:current
+ExecStop=/usr/bin/docker stop replicated-ui
+Restart=on-failure
+RestartSec=7
+
+[Install]
+WantedBy=multi-user.target

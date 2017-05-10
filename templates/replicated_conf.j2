@@ -1,0 +1,6 @@
+RELEASE_CHANNEL={{ replicated_release_channel }}
+PRIVATE_ADDRESS={{ replicated_private_address }}
+DAEMON_TOKEN={{ replicated_daemon_token }}
+SKIP_OPERATOR_INSTALL=0
+REPLICATED_OPTS="{{ http_proxy_envvar }} {{ registry_advertise_address_envvar }} -e DAEMON_TOKEN={{ replicated_daemon_token }} -e LOG_LEVEL={{ replicated_log_level }} {{ airgap_envvar }} -e NODENAME={{ ansible_hostname }}"
+REPLICATED_UI_OPTS="-e LOG_LEVEL={{ replicated_log_level }}"

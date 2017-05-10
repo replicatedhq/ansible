@@ -1,0 +1,38 @@
+---
+
+- name: check to see if pip is already installed
+  command: "{{ pip }} --version"
+  ignore_errors: true
+  register: pip_is_installed
+
+- name: download pip
+  get_url: url=https://bootstrap.pypa.io/get-pip.py dest={{ pip_download_dest }}
+  when: pip_is_installed.rc != 0
+
+- name: install pip
+  command: "{{ python }} {{ pip_download_dest }}/get-pip.py"
+  become: yes
+  when: pip_is_installed.rc != 0
+
+- name: delete get-pip.py
+  file: state=absent path={{ pip_download_dest }}/get-pip.py
+  when: pip_is_installed.rc != 0
+
+- name: check to see if pip is installed at the correct version
+  shell: "{{ pip }} --version | awk '{print $2}'"
+  register: pip_installed_version
+  when: pip_version != None
+
+- name: install required version of pip
+  command: "{{ pip }} install pip=={{ pip_version }}"
+  when: pip_version != None and pip_installed_version.stdout != pip_version
+
+- pip:
+    name: semver
+  become: True
+
+- name: Create semver test
+  template:
+    src: ../templates/semver_check
+    dest: /tmp/semver_check
+    mode: 0755

@@ -1,0 +1,35 @@
+description "Replicated Service"
+author "Replicated.com"
+start on filesystem and started docker and runlevel [2345]
+start on stopped rc RUNLEVEL=[2345]
+stop on runlevel [!2345]
+stop on started rc RUNLEVEL=[!2345]
+respawn
+respawn limit 5 10
+normal exit 0
+pre-start script
+    /bin/mkdir -p /var/run/replicated /var/lib/replicated /premkit/data /var/lib/replicated/statsd
+    /bin/chown -R {{ replicated_user_id }}:{{ docker_group_id }} /var/run/replicated /var/lib/replicated /premkit/data
+    /bin/chmod -R 755 /var/lib/replicated/tmp 2>/dev/null || true
+    /usr/bin/docker rm -f replicated 2>/dev/null || true
+end script
+pre-stop script
+    /usr/bin/docker stop replicated
+end script
+script
+    . {{ confdir }}/replicated
+    exec su -s /bin/sh -c 'exec "$0" "$@"' {{ replicated_username }} -- /usr/bin/docker run --name=replicated \
+        -p 9874-9879:9874-9879/tcp \
+        -u {{ replicated_user_id }}:{{ docker_group_id }} \
+        -v /var/lib/replicated:/var/lib/replicated \
+        -v /var/run/docker.sock:/host/var/run/docker.sock \
+        -v /proc:/host/proc:ro \
+        -v /etc:/host/etc:ro \
+        -v /etc/os-release:/host/etc/os-release:ro \
+        {{ replicated_trusted_cert_mount }} \
+        -v /var/run/replicated:/var/run/replicated \
+        -e LOCAL_ADDRESS=${PRIVATE_ADDRESS} \
+        -e RELEASE_CHANNEL=${PRIVATE_ADDRESS} \
+        $REPLICATED_OPTS \
+        quay.io/replicated/replicated:current
+end script

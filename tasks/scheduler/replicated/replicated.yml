@@ -1,0 +1,266 @@
+###
+### Stop the Replicated and Replicated-UI containers so we can install or upgrade them
+###
+
+## TODO: add proxy support
+## TODO: add ipv6 support
+## TODO: add airgap support
+
+- name: Check if Replicated service exists
+  stat: path=/etc/init.d/replicated
+  register: replicated_upstart_service_status
+
+- name: Check if /etc/systemd/system/replicated.service exists
+  stat: path=/etc/systemd/system/replicated.service
+  register: replicated_systemd_service_status
+
+- name: Stop Replicated on Upstart
+  service:
+    name: "{{ item }}"
+    state: stopped
+  with_items:
+  - replicated
+  - replicated-ui
+  when: replicated_upstart_service_status.stat.exists or replicated_systemd_service_status.stat.exists
+  become: yes
+  become_method: sudo
+
+###
+### Autodiscover existing settings and re-use envvars like DAEMON_TOKEN when present
+###
+
+- include: config.yml
+
+- name: Check if /etc/default/replicated exists
+  stat: path={{ confdir }}/replicated
+  register: replicated_init_file
+  when:
+  - replicated_daemon_token is not defined
+
+- name: Discover daemon token
+  shell: |
+    . {{ confdir }}/replicated && echo $DAEMON_TOKEN
+  when:
+  - replicated_init_file.stat.exists
+  - replicated_daemon_token is not defined
+  register: existing_daemon_token
+
+- name: Create new daemon token
+  shell: |
+    head -c 128 /dev/urandom | tr -dc "a-zA-Z0-9" | fold -w 32 | head -n 1
+  register: new_daemon_token
+  when: 
+  - not replicated_init_file.stat.exists
+  - replicated_daemon_token is not defined
+
+- name: Set daemon token
+  set_fact:
+    replicated_daemon_token: '{{ existing_daemon_token.stdout | default(new_daemon_token.stdout) }}'
+  when: replicated_daemon_token is not defined
+
+###
+### Create Replicated user and install the global alias 
+###
+
+- include: user.yml
+
+- name: Create Replicated Alias
+  template:
+    src: ../templates/replicated_alias.j2
+    dest: /etc/replicated.alias
+    mode: 0644
+  become: yes
+  become_method: sudo
+
+- name: Check for /etc/bash.bashrc
+  stat: path=/etc/bash.bashrc
+  register: bash_bashrc
+
+- name: Check for /etc/bashrc
+  stat: path=/etc/bashrc
+  register: bashrc
+
+- name: Set bash_rc path
+  set_fact:
+    bash_rc_path: /etc/bash.bashrc
+  when: bash_bashrc.stat.exists
+
+- name: Set bashrc path
+  set_fact:
+    bash_rc_path: /etc/bashrc
+  when: bashrc.stat.exists
+
+- name: Add replicated alias to global bash.bashrc
+  blockinfile:
+    dest: "{{ bash_rc_path }}"
+    insertafter: EOF
+    state: present
+    block: |
+      if [ -f /etc/replicated.alias ]; then
+          . /etc/replicated.alias
+      fi
+  when: bash_rc_path is defined
+  become: yes
+  become_method: sudo
+
+###
+### Download Replicated and Replicated-UI images
+###
+
+- name: Download Replicated
+  command: docker pull "quay.io/replicated/replicated:{{ replicated_release_channel }}-{{ replicated_version }}"
+  become: yes
+  become_method: sudo
+
+- name: Tag Replicated
+  command: docker tag "quay.io/replicated/replicated:{{ replicated_release_channel }}-{{ replicated_version }}" "quay.io/replicated/replicated:current"
+  become: yes
+  become_method: sudo
+
+- name: Download Replicated UI
+  command: docker pull "quay.io/replicated/replicated-ui:{{ replicated_release_channel }}-{{ replicated_version }}"
+  become: yes
+  become_method: sudo
+
+- name: Tag Replicated UI
+  command: docker tag "quay.io/replicated/replicated-ui:{{ replicated_release_channel }}-{{ replicated_version }}" "quay.io/replicated/replicated-ui:current"
+  become: yes
+  become_method: sudo
+
+##
+## Discover the CA file and mount it into Replicated and thus allowing updates to the host CA file to be
+## reflected in the running Replicated (Replicated will need to be restarted after the change)
+##
+
+- name: Check for /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
+  stat:
+    path: /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
+  register: ca1
+
+- name: Check for /etc/pki/tls/certs/ca-bundle.crt
+  stat:
+    path: /etc/pki/tls/certs/ca-bundle.crt
+  register: ca2
+
+- name: Check for /etc/ssl/ca-bundle.pem
+  stat:
+    path: /etc/ssl/ca-bundle.pem
+  register: ca3
+
+- name: Check for /etc/pki/tls/cacert.pem
+  stat:
+    path: /etc/pki/tls/cacert.pem
+  register: ca4
+
+- name: Check for /etc/ssl/certs/ca-certificates.crt
+  stat:
+    path: /etc/ssl/certs/ca-certificates.crt
+  register: ca5
+
+- name: Choose /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem if exists
+  set_fact: cert_file="/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem"
+  when: ca1.stat.exists == True
+
+- name: Choose /etc/pki/tls/certs/ca-bundle.crt if exists
+  set_fact: cert_file="/etc/pki/tls/certs/ca-bundle.crt"
+  when: ca2.stat.exists == True
+
+- name: Choose /etc/ssl/ca-bundle.pem if exists
+  set_fact: cert_file="/etc/ssl/ca-bundle.pem"
+  when: ca3.stat.exists == True
+
+- name: Choose /etc/pki/tls/cacert.pem if exists
+  set_fact: cert_file="/etc/pki/tls/cacert.pem"
+  when: ca4.stat.exists == True
+
+- name: Choose /etc/ssl/certs/ca-certificates.crt if exists
+  set_fact: cert_file="/etc/ssl/certs/ca-certificates.crt"
+  when: ca5.stat.exists == True
+
+- name: Set the CA flag
+  set_fact: replicated_trusted_cert_mount="-v {{ cert_file }}:/etc/ssl/certs/ca-certificates.crt"
+  when: cert_file is defined
+
+- name: Skip the CA flag, no CA file found
+  set_fact: replicated_trusted_cert_mount=""
+  when: cert_file is not defined
+
+###
+### Set startup opts flags for REPLICATED and REPLICATED_UI
+###
+
+- name: Set the HTTP_PROXY flag
+  set_fact:
+    http_proxy_envvar: '-e HTTP_PROXY="{{ HTTP_PROXY }}"'
+  when: HTTP_PROXY is defined
+
+- name: Default to no HTTP_PROXY
+  set_fact:
+    http_proxy_envvar: ''
+  when: HTTP_PROXY is not defined
+
+- name: Set facts for replicated init file
+  set_fact:
+    registry_advertise_address_envvar: ''
+    daemon_token_envvar: '-e DAEMON_TOKEN="{{ replicated_daemon_token }}"'
+    airgap_envvar: ''
+
+###
+### Create the file to store the Replicated settings
+###
+
+- name: Create Replicated defaults in {{ confdir }}/replicated
+  template:
+    src: replicated_conf.j2
+    dest: "{{ confdir }}/replicated"
+  become: yes
+  become_method: sudo
+  
+###
+### Create the init scripts
+###
+
+- name: Create Upstart defaults file and init scripts
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+  with_items:
+  - { src: "scheduler/replicated/upstart/replicated_service.j2", dest: "/etc/init/replicated.conf" }
+  - { src: "scheduler/replicated/upstart/replicated_ui_service.j2", dest: "/etc/init/replicated-ui.conf" }
+  when: ansible_service_mgr == "upstart"
+  become: yes
+  become_method: sudo
+
+- name: Create SystemD Replicated init file at /etc/init/replicated.conf
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+  with_items:
+  - { src: "scheduler/replicated/systemd/replicated_service.j2", dest: "/etc/systemd/system/replicated.service" }
+  - { src: "scheduler/replicated/systemd/replicated_ui_service.j2", dest: "/etc/systemd/system/replicated-ui.service" }
+  when: ansible_service_mgr == "systemd"
+  become: yes
+  become_method: sudo
+
+- name: SystemD Reload
+  command: systemctl daemon-reload
+  when: ansible_service_mgr == "systemd"
+  become: yes
+  become_method: sudo
+
+## TODO: add sysv init scripts
+
+###
+### Bind the Replicated and Replicated-UI serviecs back online
+###
+
+- name: Start Replicated on Upstart
+  service:
+    name: "{{ item }}"
+    state: started
+  with_items:
+  - replicated
+  - replicated-ui
+  become: yes
+  become_method: sudo
+
