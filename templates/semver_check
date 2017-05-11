@@ -1,0 +1,30 @@
+#!/usr/bin/env python
+#
+# Usage: ./semver-check.py version1 version2
+#
+# Returns
+#  0 if the versions match
+#  1 if version1 > version2
+#  -1 if version1 < version2
+#
+
+import re
+import semver
+import sys
+
+#
+# Normalizes Docker semver-like version numbers by taking the first three dot-seperated
+# strings and making each an integer, thus 17.03.1-CE will become 17.3.1
+#
+def normalize( version ):
+  parts = re.split('[.-]', version)
+  normalizedParts = []
+  for part in parts:
+    if len(normalizedParts) < 3:
+      normalizedParts.append(str(int(part)))
+  normalized = '.'.join(normalizedParts)
+  return normalized
+
+print semver.compare(normalize(sys.argv[1]), normalize(sys.argv[2]))
+
+

@@ -1,0 +1,6 @@
+RELEASE_CHANNEL=stable
+DAEMON_ENDPOINT={{ replicated_daemon_endpoint }}
+DAEMON_TOKEN={{ replicated_daemon_token }}
+DAEMON_HOST={{ replicated_daemon_host }}
+PRIVATE_ADDRESS={{ replicated_private_address }}
+REPLICATED_OPERATOR_OPTS="{{ replicated_operator_id_envvar }} {{ replicated_public_address_envvar }} {{ replicated_tags_envvar }} -e LOG_LEVEL={{ replicated_log_level }} {{ replicated_airgap_envvar }} -e NODENAME={{ ansible_hostname }}"

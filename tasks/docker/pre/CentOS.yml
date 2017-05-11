@@ -1,0 +1,21 @@
+- name: Set max install version on CENTOS 6
+  set_fact:
+    replicated_docker_version: 1.7.1
+  when:
+    - ansible_distribution == "CentOS"
+    - ansible_distribution_major_version == "6"
+
+- name: Set max install version on CENTOS 7
+  set_fact:
+    replicated_docker_version: 1.12.3
+  when:
+    - ansible_distribution == "CentOS"
+    - ansible_distribution_major_version == "7"
+
+- name: Install libselinux-python bindings
+  yum:
+    name: libselinux-python
+    state: present
+  become: yes
+
+- include: ../docker_service.yml

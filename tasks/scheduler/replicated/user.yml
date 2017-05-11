@@ -1,0 +1,40 @@
+###
+### Create the replicated user
+###
+
+- name: Create Replicated User
+  user:
+    name: replicated
+    shell: /bin/bash
+    groups: docker
+    append: true
+  become: yes
+  become_method: sudo
+
+###
+### Discover the replicated user setup or create as needed
+###
+
+- name: Discover replicated user-uid
+  command: "id -u {{ replicated_username }}"
+  register: replicated_uid_cmd
+  become: yes
+  become_method: sudo
+
+- name: Discover the docker group ID
+  command: "stat -c '%g' /var/run/docker.sock"
+  register: docker_gid_cmd
+  become: yes
+  become_method: sudo
+
+- name: Fallback to the docker group if needed
+  command: "getent group docker | cut -d: -f3"
+  register: docker_gid_fallback_cmd
+  when: docker_gid_cmd is not defined
+  become: yes
+  become_method: sudo
+
+- name: Set UID/GID vars
+  set_fact:
+    replicated_user_id: '{{ replicated_uid_cmd.stdout | default("0") }}'
+    docker_group_id: '{{ docker_gid_cmd.stdout | default(docker_gid_fallback_cmd.stdout) | default("0") }}'

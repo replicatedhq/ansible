@@ -1,0 +1,19 @@
+###
+### Set the directory where the configuration files will be saved
+###
+- name: Check for sysconfig filesystem layout
+  stat:
+    path: /etc/sysconfig
+  register: sysconfig_dir
+
+- name: Set confdir
+  set_fact:
+    confdir: "/etc/sysconfig"
+  when:
+  - ansible_service_mgr == "systemd"
+  - sysconfig_dir.stat.isDir is defined and sysconfig_dir.stat.isDir
+
+- name: Default confdir if not defined
+  set_fact:
+    confdir: "/etc/default"
+  when: confdir is not defined

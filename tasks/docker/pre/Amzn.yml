@@ -1,0 +1,13 @@
+- name: Set max install version on Amazon Linux
+  set_fact:
+    replicated_docker_version: 1.12.6
+
+#        # Docker install script no longer supports Amazon Linux
+#        printf "${GREEN}Installing docker from yum repository${NC}\n"
+#        yum -y -q install docker-${1}
+#        printf "${GREEN}External script is finished${NC}\n"
+#        service docker start || true
+#        DID_INSTALL_DOCKER=1
+#        return
+
+- include: ../docker_service.yml

@@ -1,0 +1,15 @@
+- name: Set max install version on Ubuntu 15.04
+  set_fact:
+    replicated_docker_version: 1.9.1
+  when:
+    - ansible_distribution_major_version == "15"
+
+- name: Disable lxc-net to allow ubuntu15 install-script to find eth0
+  service: name=lxc-net state=stopped
+  become: yes
+  become_method: sudo
+  when:
+    - ansible_distribution == "Ubuntu"
+    - ansible_distribution_version == "15.04"
+
+- include: ../docker_service.yml

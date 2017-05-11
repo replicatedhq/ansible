@@ -1,0 +1,151 @@
+## TODO: add proxy support
+## TODO: add ipv6 support
+
+- include: user.yml
+- include: config.yml
+    
+- name: Check if /etc/init.d/replicated-operator exists
+  stat: path=/etc/init.d/replicated-operator
+  register: replicated_operator_upstart_service_status
+
+- name: Check if /etc/systemd/system/replicated-operator.service exists
+  stat: path=/etc/systemd/system/replicated-operator.service
+  register: replicated_operator_systemd_service_status
+
+- name: Ensure replicated-operator is stopped
+  service:
+    name: replicated-operator
+    state: stopped
+  when:
+  - replicated_operator_upstart_service_status.stat.exists or replicated_operator_systemd_service_status.stat.exists
+  become: yes
+  become_method: sudo
+
+###
+### Autodiscover existing settings and re-use DAEMON_TOKEN envvar when present
+###
+
+- name: Check if /etc/default/replicated exists
+  stat: path={{ confdir }}/replicated
+  register: replicated_init_file
+
+- name: Discover daemon token from replicated
+  shell: |
+    . {{ confdir }}/replicated && echo $DAEMON_TOKEN
+  when:
+  - replicated_init_file.stat.exists
+  register: existing_replicated_daemon_token
+
+- name: Check if /etc/default/replicated-operator exists
+  stat: path={{ confdir }}/replicated-operator
+  register: replicated_operator_init_file
+
+- name: Discover daemon token from replicated operator
+  shell: |
+    . {{ confdir }}/replicated-operator && echo $DAEMON_TOKEN
+  when:
+  - replicated_operator_init_file.stat.exists
+  register: existing_replicated_operator_daemon_token
+
+- name: Set daemon token
+  set_fact:
+    replicated_daemon_token: '{{ existing_replicated_daemon_token.stdout | default(existing_replicated_operator_daemon_token.stdout) }}'
+  when: replicated_daemon_token is not defined
+
+###
+### Download the Replicated Operator Image
+###
+
+- name: Download Replicated Operator
+  command: docker pull "quay.io/replicated/replicated-operator:{{ replicated_release_channel }}-{{ replicated_version }}"
+  become: yes
+  become_method: sudo
+
+- name: Tag Replicated
+  command: docker tag "quay.io/replicated/replicated-operator:{{ replicated_release_channel }}-{{ replicated_version }}" "quay.io/replicated/replicated-operator:current"
+  become: yes
+  become_method: sudo
+
+###
+### Set startup opts flags for REPLICATED-OPERATOR
+###
+
+- name: Set the AIRGAP flag
+  set_fact:
+    replicated_airgap_envvar: '-e REPLICATED_AIRGAP=true'
+  when:
+  - replicated_airgap is defined
+  - replicated_airgap == True
+
+- name: Default to no AIRGAP
+  set_fact:
+    replicated_airgap_envvar: ''
+  when: replicated_airgap_envvar is not defined
+
+- name: Set the TAGS flag
+  set_fact:
+    replicated_tags_envvar: '-e TAGS="{{ replicated_tags }}"'
+  when: replicated_tags is defined
+
+- name: Default to no TAGS
+  set_fact:
+    replicated_tags_envvar: ''
+  when: replicated_tags_envvar is not defined
+
+- name: Set the PUBLIC_ADDRESS flag
+  set_fact:
+    replicated_public_address_envvar: '-e PUBLIC_ADDRESS="{{ replicated_public_address }}"'
+  when: replicated_public_address is defined
+
+- name: Default to no PUBLIC_ADDRESS
+  set_fact:
+    replicated_public_address_envvar: ''
+  when: replicated_public_address_envvar is not defined
+
+- name: Set the OPERATOR_ID flag
+  set_fact:
+    replicated_operator_id_envvar: '-e OPERATOR_ID="{{ operator_id }}"'
+  when: operator_id is defined
+
+- name: Default to no OPERATOR_ID
+  set_fact:
+    replicated_operator_id_envvar: ''
+  when: replicated_operator_id_envvar is not defined
+
+- name: Set general init flags
+  set_fact:
+    registry_advertise_address_envvar: ''
+    replicated_daemon_token_envvar: '-e DAEMON_TOKEN="{{ replicated_daemon_token }}"'
+    airgap_envvar: ''
+
+- name: Create Replicated Operator defaults in {{ confdir }}/replicated-operator
+  template:
+    src: operator_conf.j2
+    dest: "{{ confdir }}/replicated-operator"
+  become: yes
+  become_method: sudo
+
+- name: Create Replicated Operator init file at /etc/init/replicated-operator.conf
+  template:
+    src: scheduler/replicated/upstart/replicated_operator_service.j2
+    dest: /etc/init/replicated-operator.conf
+  when: ansible_service_mgr == "upstart"
+  become: yes
+  become_method: sudo
+
+- name: Create Replicated Operator init file at /etc/systemd/system/replicated.service
+  template:
+    src: scheduler/replicated/systemd/replicated_operator_service.j2
+    dest: /etc/systemd/system/replicated-operator.service
+  when: ansible_service_mgr == "systemd"
+  become: yes
+  become_method: sudo
+
+- name: Ensure replicated-operator is started 
+  service:
+    name: replicated-operator
+    state: started
+  become: yes
+  become_method: sudo
+
+## TODO: add sysv init scripts
